@@ -76,18 +76,17 @@ act = \case
   Ml -> Norm (\(Pointer p m) -> Pointer (p - 1) m)
   Ci -> Norm (\(Pointer p m) -> Pointer p (f p (+ 1) m))
   Cr -> Norm (\(Pointer p m) -> Pointer p (f p (\x -> x - 1) m))
-  Pr -> Out (\(Pointer p m) -> putChar (toEnum (m !! p) :: Char))
+  Pr -> Out (\(Pointer p m) -> flushStr [toEnum (m !! p) :: Char])
   Ip -> In
     (\(Pointer p m) ->
-      (\op -> Pointer p (f p (const op) m)) <$> (fromEnum <$> getChar)
+      (\op -> Pointer p (f p (const $ fromEnum op) m)) <$> getChar
     )
  where
   f a op xs = let (lp, rp) = splitAt a xs in lp ++ [op $ head rp] ++ tail rp
 
 walk :: Pointer -> Bf [Op] -> IO Pointer
-walk pt (Atom ops) = chainF rs pt
+walk pt (Atom ops) = chainF (map act ops) pt
  where
-  rs = map act ops
   fx :: Act -> Pointer -> IO Pointer
   fx (Norm f) x = return $ f x
   fx (Out  f) x = f x >> return x
