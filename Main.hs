@@ -11,10 +11,6 @@ data Bf a = Atom a | Loop [Bf a] deriving Show
 data Pointer = Pointer {pos :: Int, mem :: [Int]} deriving Show
 type Act = Either (Pointer -> IO()) (Pointer -> Pointer)
 
-instance Functor Bf where
-    fmap f (Atom x) = Atom (f x)
-    fmap f (Loop x) = Loop (fmap f <$> x)
-
 main :: IO ()
 main = do
     args <- getArgs
@@ -35,13 +31,14 @@ flushStr s = putStr s >> hFlush stdout
 readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
+readExpr :: String -> IO ()
 readExpr x = void $ walkBf (fromEither $ eval x) (Pointer 0 (replicate 16 0))
+    where
+        fromEither (Right r) = r
+        fromEither (Left _)  = []
 
 eval :: String -> Either ParseError [Bf [Op]]
-eval x = map toBfOp <$> regularParse parseExpr (getVal x)
-
-fromEither (Right x) = x
-fromEither (Left _)  = []
+eval x = map toBfOp <$> regularParse parseExpr (filter (`elem` "+-<>[].") x)
 
 -- Parser
 
@@ -58,9 +55,6 @@ parseExpr :: Parser [Bf String]
 parseExpr = many1 $ choice [try parseLoop, parseAtom]
 
 -- Helper
-
-getVal :: String -> String
-getVal = filter (`elem` "+-<>[].")
 
 toBfOp :: Bf String -> Bf [Op]
 toBfOp (Atom x) = Atom (map opMap x)
@@ -100,9 +94,7 @@ walk pt lp@(Loop lps) = do
     let (m, p) = (mem pt, pos pt)
     if (m !! p) == 0
     then return pt
-    else do
-        res <- walkBf lps pt
-        walk res lp
+    else walkBf lps pt >>= flip walk lp
 
 walkBf :: [Bf [Op]] -> Pointer -> IO Pointer
 walkBf [] x     = return x
