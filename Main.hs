@@ -2,6 +2,9 @@
 module Main where
 
 import           Text.ParserCombinators.Parsec
+import Control.Monad (void)
+import System.Environment (getArgs)
+import           System.IO
 
 data Op = Ml | Mr | Ci | Cr | Pr deriving Show
 data Bf a = Atom a | Loop [Bf a] deriving Show
@@ -13,11 +16,32 @@ instance Functor Bf where
     fmap f (Loop x) = Loop (fmap f <$> x)
 
 main :: IO ()
-main = print $ map toBfOp <$> regularParse
-    parseExpr
-    (getVal "++++++++[>++++++<-]>+.")
+main = do
+    args <- getArgs 
+    if null args then flushStr "Brain Fuck\n" >> runRepl else runOne (head args)
 
-eval x = map toBfOp <$> regularParse parseExpr x
+runRepl :: IO ()
+runRepl = readPrompt "> " >>= readExpr >> runRepl
+
+runOne :: String -> IO ()
+runOne arg = do
+    handle <- openFile arg ReadMode  
+    hGetContents handle >>= readExpr
+    hClose handle
+
+flushStr :: String -> IO ()
+flushStr s = putStr s >> hFlush stdout
+
+readPrompt :: String -> IO String
+readPrompt prompt = flushStr prompt >> getLine
+
+readExpr x = void $ walkBf (fromEither $ eval x) (Pointer 0 (replicate 16 0))
+
+eval :: String -> Either ParseError [Bf [Op]]
+eval x = map toBfOp <$> regularParse parseExpr (getVal x)
+
+fromEither (Right x) = x
+fromEither (Left _)  = []
 
 -- Parser
 
@@ -67,12 +91,18 @@ walk pt (Atom ops) = chainF rs pt
     where
         rs = map act ops
         fx :: Act -> Pointer -> IO Pointer
-        fx (Right x) acc = return $ x acc
-        fx (Left x) acc = x acc >> return acc
+        fx (Right f) x = return $ f x
+        fx (Left f) x = f x >> return x
         chainF :: [Act] -> Pointer -> IO Pointer
         chainF [] x = return x
         chainF (f:fs) x = fx f x >>= chainF fs
-walk pt@(Pointer 0 _) (Loop _) = return pt
+walk pt lp@(Loop lps) = do
+    let (m, p) = (mem pt, pos pt)
+    if (m !! p) == 0
+    then return pt
+    else do
+        res <- walkBf lps pt
+        walk res lp
 
 walkBf :: [Bf [Op]] -> Pointer -> IO Pointer
 walkBf [] x = return x
