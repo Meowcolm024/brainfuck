@@ -1,10 +1,10 @@
-{-# LANGUAGE LambdaCase#-}
+{-# LANGUAGE LambdaCase #-}
 module Main where
 
-import           Text.ParserCombinators.Parsec
-import Control.Monad (void)
-import System.Environment (getArgs)
+import           Control.Monad                 (void)
+import           System.Environment            (getArgs)
 import           System.IO
+import           Text.ParserCombinators.Parsec
 
 data Op = Ml | Mr | Ci | Cr | Pr deriving Show
 data Bf a = Atom a | Loop [Bf a] deriving Show
@@ -17,7 +17,7 @@ instance Functor Bf where
 
 main :: IO ()
 main = do
-    args <- getArgs 
+    args <- getArgs
     if null args then flushStr "Brain Fuck\n" >> runRepl else runOne (head args)
 
 runRepl :: IO ()
@@ -25,7 +25,7 @@ runRepl = readPrompt "> " >>= readExpr >> runRepl
 
 runOne :: String -> IO ()
 runOne arg = do
-    handle <- openFile arg ReadMode  
+    handle <- openFile arg ReadMode
     hGetContents handle >>= readExpr
     hClose handle
 
@@ -92,9 +92,9 @@ walk pt (Atom ops) = chainF rs pt
         rs = map act ops
         fx :: Act -> Pointer -> IO Pointer
         fx (Right f) x = return $ f x
-        fx (Left f) x = f x >> return x
+        fx (Left f) x  = f x >> return x
         chainF :: [Act] -> Pointer -> IO Pointer
-        chainF [] x = return x
+        chainF [] x     = return x
         chainF (f:fs) x = fx f x >>= chainF fs
 walk pt lp@(Loop lps) = do
     let (m, p) = (mem pt, pos pt)
@@ -105,5 +105,5 @@ walk pt lp@(Loop lps) = do
         walk res lp
 
 walkBf :: [Bf [Op]] -> Pointer -> IO Pointer
-walkBf [] x = return x
+walkBf [] x     = return x
 walkBf (b:bs) x = walk x b >>= walkBf bs
