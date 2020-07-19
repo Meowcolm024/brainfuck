@@ -1,15 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
 module Main where
 
-import           Control.Monad                 (void)
-import           System.Environment            (getArgs)
+import           Control.Monad                  ( void )
+import           System.Environment             ( getArgs )
 import           System.IO
 import           Text.ParserCombinators.Parsec
 
 data Op = Ml | Mr | Ci | Cr | Pr deriving Show
 data Bf a = Atom a | Loop [Bf a] deriving Show
 data Pointer = Pointer {pos :: Int, mem :: [Int]} deriving Show
-type Act = Either (Pointer -> IO()) (Pointer -> Pointer)
+type Act = Either (Pointer -> IO ()) (Pointer -> Pointer)
 
 main :: IO ()
 main = do
@@ -33,9 +33,9 @@ readPrompt prompt = flushStr prompt >> getLine
 
 readExpr :: String -> IO ()
 readExpr x = void $ walkBf (fromEither $ eval x) (Pointer 0 (replicate 16 0))
-    where
-        fromEither (Right r) = r
-        fromEither (Left _)  = []
+  where
+    fromEither (Right r) = r
+    fromEither (Left  _) = []
 
 eval :: String -> Either ParseError [Bf [Op]]
 eval x = map toBfOp <$> regularParse parseExpr (filter (`elem` "+-<>[].") x)
@@ -54,7 +54,7 @@ parseAtom = Atom <$> (many1 . oneOf) "+-<>."
 parseExpr :: Parser [Bf String]
 parseExpr = many1 $ choice [try parseLoop, parseAtom]
 
--- Helper
+-- Eval
 
 toBfOp :: Bf String -> Bf [Op]
 toBfOp (Atom x) = Atom (map opMap x)
@@ -69,33 +69,31 @@ opMap = \case
     '.' -> Pr
     _   -> error "Impossible!"
 
--- Eval
-
 act :: Op -> Act
 act = \case
-    Mr -> Right (\(Pointer p m) -> Pointer (p+1) m)
-    Ml -> Right (\(Pointer p m) -> Pointer (p-1) m)
+    Mr -> Right (\(Pointer p m) -> Pointer (p + 1) m)
+    Ml -> Right (\(Pointer p m) -> Pointer (p - 1) m)
     Ci -> Right (\(Pointer p m) -> Pointer p (f p (+) m))
     Cr -> Right (\(Pointer p m) -> Pointer p (f p (-) m))
     Pr -> Left (\(Pointer p m) -> putChar (toEnum (m !! p) :: Char))
-  where f a op xs = let (lp, rp) = splitAt a xs in lp ++ [head rp `op` 1] ++ tail rp
+  where
+    f a op xs =
+        let (lp, rp) = splitAt a xs in lp ++ [head rp `op` 1] ++ tail rp
 
 walk :: Pointer -> Bf [Op] -> IO Pointer
 walk pt (Atom ops) = chainF rs pt
-    where
-        rs = map act ops
-        fx :: Act -> Pointer -> IO Pointer
-        fx (Right f) x = return $ f x
-        fx (Left f) x  = f x >> return x
-        chainF :: [Act] -> Pointer -> IO Pointer
-        chainF [] x     = return x
-        chainF (f:fs) x = fx f x >>= chainF fs
-walk pt lp@(Loop lps) = do
-    let (m, p) = (mem pt, pos pt)
-    if (m !! p) == 0
+  where
+    rs = map act ops
+    fx :: Act -> Pointer -> IO Pointer
+    fx (Right f) x = return $ f x
+    fx (Left  f) x = f x >> return x
+    chainF :: [Act] -> Pointer -> IO Pointer
+    chainF []       x = return x
+    chainF (f : fs) x = fx f x >>= chainF fs
+walk pt lp@(Loop lps) = if (mem pt !! pos pt) == 0
     then return pt
     else walkBf lps pt >>= flip walk lp
 
 walkBf :: [Bf [Op]] -> Pointer -> IO Pointer
-walkBf [] x     = return x
-walkBf (b:bs) x = walk x b >>= walkBf bs
+walkBf []       x = return x
+walkBf (b : bs) x = walk x b >>= walkBf bs
