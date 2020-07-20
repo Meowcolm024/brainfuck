@@ -32,13 +32,13 @@ readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
 readExpr :: String -> IO ()
-readExpr x = void $ walkBf (fromEither $ eval x) (Pointer 0 (replicate 16 0))
+readExpr x = void $ walkBf (fromEither $ eval x) (Pointer 0 (replicate 32 0))
  where
   fromEither (Right r) = r
   fromEither (Left  _) = []
 
 eval :: String -> Either ParseError [Bf [Op]]
-eval x = map toBfOp <$> regularParse parseExpr (filter (`elem` "+-<>[].,") x)
+eval = (map toBfOp <$>) . regularParse parseExpr . filter (`elem` "+-<>[].,")
 
 -- Parser
 
