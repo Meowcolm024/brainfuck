@@ -1,20 +1,26 @@
 {-# LANGUAGE LambdaCase #-}
+
 module Main where
 
-import           Control.Monad                  ( void )
-import           System.Environment             ( getArgs )
-import           System.IO
-import           Text.ParserCombinators.Parsec
+import Control.Monad (void)
+import Data.Either (fromRight)
+import Data.Foldable (foldlM)
+import Lens.Micro (ix, (%~), (&))
+import System.Environment (getArgs)
+import System.IO
+import Text.ParserCombinators.Parsec
 
 type Op = Char
-data Bf = Atom [Op] | Loop [Bf] deriving Show
-data Pointer = Pointer {pos :: Int, mem :: [Int]} deriving Show
+data Bf = Atom [Op] | Loop [Bf]
+data Pointer = Pointer {pos :: Int, mem :: [Int]}
 data Act = In (Pointer -> IO Pointer) | Out (Pointer -> IO ()) | Norm (Pointer -> Pointer)
 
 main :: IO ()
 main = do
   args <- getArgs
-  if null args then flushStr "Brain Fuck\n" >> runRepl else runOne (head args)
+  if null args
+    then flushStr "Brain Fuck\n" >> runRepl
+    else runOne (head args)
 
 runRepl :: IO ()
 runRepl = readPrompt "> " >>= readExpr >> runRepl
@@ -32,10 +38,7 @@ readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
 readExpr :: String -> IO ()
-readExpr x = void $ walkBf (fromEither $ eval x) (Pointer 0 (replicate 32 0))
- where
-  fromEither (Right r) = r
-  fromEither (Left  _) = []
+readExpr x = void $ walkBf (fromRight [] $ eval x) (Pointer 0 (replicate 64 0))
 
 eval :: String -> Either ParseError [Bf]
 eval = regularParse parseExpr . filter (`elem` "+-<>[].,")
@@ -60,30 +63,29 @@ act :: Op -> Act
 act = \case
   '>' -> Norm (\(Pointer p m) -> Pointer (p + 1) m)
   '<' -> Norm (\(Pointer p m) -> Pointer (p - 1) m)
-  '+' -> Norm (\(Pointer p m) -> Pointer p (f p (+ 1) m))
-  '-' -> Norm (\(Pointer p m) -> Pointer p (f p (\x -> x - 1) m))
+  '+' -> Norm (\(Pointer p m) -> Pointer p (update p (\x -> x + 1) m))
+  '-' -> Norm (\(Pointer p m) -> Pointer p (update p (\x -> x - 1) m))
   '.' -> Out (\(Pointer p m) -> flushStr [toEnum (m !! p) :: Char])
-  ',' -> In
-    (\(Pointer p m) ->
-      (\op -> Pointer p (f p (const $ fromEnum op) m)) <$> getChar
-    )
-  _   -> error "Impossible!"
- where
-  f a op xs = let (lp, rp) = splitAt a xs in lp ++ [op $ head rp] ++ tail rp
+  ',' ->
+    In
+      ( \(Pointer p m) ->
+          (\op -> Pointer p (update p (const $ fromEnum op) m)) <$> getChar
+      )
+  _ -> error "Impossible!"
+  where
+    update i op xs = xs & ix i %~ op
 
 walk :: Pointer -> Bf -> IO Pointer
-walk pt (Atom ops) = chainF (map act ops) pt
- where
-  fx :: Act -> Pointer -> IO Pointer
-  fx (Norm f) x = return $ f x
-  fx (Out  f) x = f x >> return x
-  fx (In   f) x = f x
-  chainF :: [Act] -> Pointer -> IO Pointer
-  chainF []       x = return x
-  chainF (f : fs) x = fx f x >>= chainF fs
+walk pt (Atom ops) = foldlM (flip apply) pt (map act ops)
+  where
+    apply :: Act -> Pointer -> IO Pointer
+    apply (Norm f) x = return $ f x
+    apply (Out f) x = f x >> return x
+    apply (In f) x = f x
 walk pt lp@(Loop lps) =
-  if (mem pt !! pos pt) == 0 then return pt else walkBf lps pt >>= flip walk lp
+  if (mem pt !! pos pt) == 0
+    then return pt
+    else walkBf lps pt >>= flip walk lp
 
 walkBf :: [Bf] -> Pointer -> IO Pointer
-walkBf []       x = return x
-walkBf (b : bs) x = walk x b >>= walkBf bs
+walkBf = flip $ foldlM walk
