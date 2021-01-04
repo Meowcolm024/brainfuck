@@ -63,8 +63,8 @@ act :: Op -> Act
 act = \case
   '>' -> Norm (\(Pointer p m) -> Pointer (p + 1) m)
   '<' -> Norm (\(Pointer p m) -> Pointer (p - 1) m)
-  '+' -> Norm (\(Pointer p m) -> Pointer p (update p (\x -> x + 1) m))
-  '-' -> Norm (\(Pointer p m) -> Pointer p (update p (\x -> x - 1) m))
+  '+' -> Norm (\(Pointer p m) -> Pointer p (update p (ascend True) m))
+  '-' -> Norm (\(Pointer p m) -> Pointer p (update p (ascend False) m))
   '.' -> Out (\(Pointer p m) -> flushStr [toEnum (m !! p) :: Char])
   ',' ->
     In
@@ -74,6 +74,8 @@ act = \case
   _ -> error "Impossible!"
   where
     update i op xs = xs & ix i %~ op
+    ascend True i = if i == 255 then 0 else i+1
+    ascend False i = if i == 0 then 255 else i-1
 
 walk :: Pointer -> Bf -> IO Pointer
 walk pt (Atom ops) = foldlM (flip apply) pt (map act ops)
