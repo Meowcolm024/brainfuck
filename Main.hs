@@ -2,25 +2,29 @@
 
 module Main where
 
-import Control.Monad (void)
-import Data.Either (fromRight)
-import Data.Foldable (foldlM)
-import Lens.Micro (ix, (%~), (&))
-import System.Environment (getArgs)
-import System.IO
-import Text.ParserCombinators.Parsec
+import           Control.Monad                  ( void )
+import           Data.Either                    ( fromRight )
+import           Data.Foldable                  ( foldlM )
+import           Data.Vector                    ( (!)
+                                                , Vector
+                                                )
+import qualified Data.Vector                   as V
+import           System.Environment             ( getArgs )
+import           System.IO
+import           Text.ParserCombinators.Parsec
 
 type Op = Char
 data Bf = Atom [Op] | Loop [Bf]
-data Pointer = Pointer {pos :: Int, mem :: [Int]}
+data Pointer = Pointer
+  { pos :: Int
+  , mem :: Vector Int
+  }
 data Act = In (Pointer -> IO Pointer) | Out (Pointer -> IO ()) | Norm (Pointer -> Pointer)
 
 main :: IO ()
 main = do
   args <- getArgs
-  if null args
-    then flushStr "Brain Fuck\n" >> runRepl
-    else runOne (head args)
+  if null args then flushStr "Brain Fuck\n" >> runRepl else runOne (head args)
 
 runRepl :: IO ()
 runRepl = readPrompt "> " >>= readExpr >> runRepl
@@ -38,7 +42,9 @@ readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
 readExpr :: String -> IO ()
-readExpr x = void $ walkBf (fromRight [] $ eval x) (Pointer 0 (replicate 64 0))
+readExpr x = void $ foldlM walk
+                           (Pointer 0 $ V.fromListN 128 (repeat 0))
+                           (fromRight [] $ eval x)
 
 eval :: String -> Either ParseError [Bf]
 eval = regularParse parseExpr . filter (`elem` "+-<>[].,")
@@ -61,33 +67,26 @@ parseExpr = many1 $ choice [try parseLoop, parseAtom]
 
 act :: Op -> Act
 act = \case
-  '>' -> Norm (\(Pointer p m) -> Pointer (p + 1) m)
-  '<' -> Norm (\(Pointer p m) -> Pointer (p - 1) m)
-  '+' -> Norm (\(Pointer p m) -> Pointer p (update p (ascend True) m))
-  '-' -> Norm (\(Pointer p m) -> Pointer p (update p (ascend False) m))
-  '.' -> Out (\(Pointer p m) -> flushStr [toEnum (m !! p) :: Char])
-  ',' ->
-    In
-      ( \(Pointer p m) ->
-          (\op -> Pointer p (update p (const $ fromEnum op) m)) <$> getChar
-      )
-  _ -> error "Impossible!"
-  where
-    update i op xs = xs & ix i %~ op
-    ascend True i = if i == 255 then 0 else i+1
-    ascend False i = if i == 0 then 255 else i-1
+  '>'  -> Norm (\(Pointer p m) -> Pointer (p + 1) m)
+  '<'  -> Norm (\(Pointer p m) -> Pointer (p - 1) m)
+  '+'  -> Norm (\(Pointer p m) -> Pointer p (update p (ascend True) m))
+  '-'  -> Norm (\(Pointer p m) -> Pointer p (update p (ascend False) m))
+  '.'  -> Out (\(Pointer p m) -> flushStr [toEnum (m ! p)])
+  ~',' -> In
+    (\(Pointer p m) ->
+      (\op -> Pointer p (update p (const $ fromEnum op) m)) <$> getChar
+    )
+ where
+  update i op xs = V.update xs $ V.fromList [(i, op (xs ! i))]
+  ascend True  i = i + 1 `mod` 256
+  ascend False i = i - 1 `mod` 256
 
 walk :: Pointer -> Bf -> IO Pointer
-walk pt (Atom ops) = foldlM (flip apply) pt (map act ops)
-  where
-    apply :: Act -> Pointer -> IO Pointer
-    apply (Norm f) x = return $ f x
-    apply (Out f) x = f x >> return x
-    apply (In f) x = f x
-walk pt lp@(Loop lps) =
-  if (mem pt !! pos pt) == 0
-    then return pt
-    else walkBf lps pt >>= flip walk lp
-
-walkBf :: [Bf] -> Pointer -> IO Pointer
-walkBf = flip $ foldlM walk
+walk pt (Atom ops) = foldlM apply pt (map act ops)
+ where
+  apply x (Norm f) = return $ f x
+  apply x (Out  f) = f x >> return x
+  apply x (In   f) = f x
+walk pt lp@(Loop lps) = if (mem pt ! pos pt) == 0
+  then return pt
+  else foldlM walk pt lps >>= flip walk lp
