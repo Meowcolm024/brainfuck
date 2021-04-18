@@ -42,17 +42,18 @@ readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
 readExpr :: String -> IO ()
-readExpr x = void $ foldlM walk
-                           (Pointer 0 $ V.fromListN 128 (repeat 0))
-                           (fromRight [] $ eval x)
+readExpr x = case eval x of
+  Left err -> print err
+  Right bf -> 
+    void $ foldlM walk (Pointer 0 $ V.fromListN 128 (repeat 0)) bf
 
 eval :: String -> Either ParseError [Bf]
-eval = regularParse parseExpr . filter (`elem` "+-<>[].,")
+eval = regularParse (parseExpr <|> (eof >> return [])) . filter (`elem` "+-<>[].,")
 
 -- Parser
 
 regularParse :: Parser a -> String -> Either ParseError a
-regularParse p = parse p "(unknown)"
+regularParse p = parse p "brainfuck"
 
 parseLoop :: Parser Bf
 parseLoop = Loop <$> (char '[' *> parseExpr <* char ']')
