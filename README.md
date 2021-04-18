@@ -2,6 +2,8 @@
 
 Brainfuck written in Haskell.
 
+**Note**: a cell will reset to `0` when exceeded `256`.
+
 Compile:
 
 ``` hs
