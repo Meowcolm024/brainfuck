@@ -2,7 +2,7 @@
 
 Brainfuck written in Haskell.
 
-**Note**: `diverge branch`: a cell will reset to `0` when exceeded `256`.
+**Note**: a cell will reset to `0` when exceeded `256`.
 
 Compile:
 
