@@ -3,7 +3,6 @@
 module Main where
 
 import           Control.Monad                  ( void )
-import           Data.Either                    ( fromRight )
 import           Data.Foldable                  ( foldlM )
 import           Data.Vector                    ( (!)
                                                 , Vector
@@ -24,7 +23,9 @@ data Act = In (Pointer -> IO Pointer) | Out (Pointer -> IO ()) | Norm (Pointer -
 main :: IO ()
 main = do
   args <- getArgs
-  if null args then flushStr "Brain Fuck\n" >> runRepl else runOne (head args)
+  case args of
+    []        -> flushStr "Brain Fuck\n" >> runRepl
+    (arg : _) -> runOne arg
 
 runRepl :: IO ()
 runRepl = readPrompt "> " >>= readExpr >> runRepl
@@ -43,12 +44,12 @@ readPrompt prompt = flushStr prompt >> getLine
 
 readExpr :: String -> IO ()
 readExpr x = case eval x of
-  Left err -> print err
-  Right bf -> 
-    void $ foldlM walk (Pointer 0 $ V.fromListN 128 (repeat 0)) bf
+  Left  err -> print err
+  Right bf  -> void $ foldlM walk (Pointer 0 $ V.fromListN 128 (repeat 0)) bf
 
 eval :: String -> Either ParseError [Bf]
-eval = regularParse (parseExpr <|> (eof >> return [])) . filter (`elem` "+-<>[].,")
+eval =
+  regularParse (parseExpr <|> (eof >> return [])) . filter (`elem` "+-<>[].,")
 
 -- Parser
 
@@ -68,15 +69,14 @@ parseExpr = many1 $ choice [try parseLoop, parseAtom]
 
 act :: Op -> Act
 act = \case
-  '>'  -> Norm (\(Pointer p m) -> Pointer (p + 1) m)
-  '<'  -> Norm (\(Pointer p m) -> Pointer (p - 1) m)
-  '+'  -> Norm (\(Pointer p m) -> Pointer p (update p (ascend True) m))
-  '-'  -> Norm (\(Pointer p m) -> Pointer p (update p (ascend False) m))
-  '.'  -> Out (\(Pointer p m) -> flushStr [toEnum (m ! p)])
-  ~',' -> In
-    (\(Pointer p m) ->
-      (\op -> Pointer p (update p (const $ fromEnum op) m)) <$> getChar
-    )
+  '>'  -> Norm $ \(Pointer p m) -> Pointer (p + 1) m
+  '<'  -> Norm $ \(Pointer p m) -> Pointer (p - 1) m
+  '+'  -> Norm $ \(Pointer p m) -> Pointer p (update p (ascend True) m)
+  '-'  -> Norm $ \(Pointer p m) -> Pointer p (update p (ascend False) m)
+  '.'  -> Out $ \(Pointer p m) -> flushStr [toEnum (m ! p)]
+  ~',' -> In $ \(Pointer p m) -> do
+    op <- getChar
+    return $ Pointer p (update p (const $ fromEnum op) m)
  where
   update i op xs = V.update xs $ V.fromList [(i, op (xs ! i))]
   ascend True  i = i + 1 `mod` 256
@@ -85,9 +85,8 @@ act = \case
 walk :: Pointer -> Bf -> IO Pointer
 walk pt (Atom ops) = foldlM apply pt (map act ops)
  where
-  apply x (Norm f) = return $ f x
+  apply x (Norm f) = return (f x)
   apply x (Out  f) = f x >> return x
   apply x (In   f) = f x
-walk pt lp@(Loop lps) = if (mem pt ! pos pt) == 0
-  then return pt
-  else foldlM walk pt lps >>= flip walk lp
+walk pt lp@(Loop lps) | (mem pt ! pos pt) == 0 = return pt
+                      | otherwise = foldlM walk pt lps >>= flip walk lp
